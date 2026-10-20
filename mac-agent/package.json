@@ -1,0 +1,108 @@
+{
+  "name": "remote-control-mac-agent",
+  "version": "1.0.0",
+  "description": "Mac Agent — captures the screen, streams it over WebRTC to a paired iPhone browser, and injects mouse/keyboard events received back",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "postinstall": "node scripts/fix-electron.js",
+    "build": "electron-builder --mac --dir",
+    "dist": "electron-builder --mac dmg"
+  },
+  "build": {
+    "appId": "com.remote.mac-agent",
+    "productName": "Remote Control Agent",
+    "copyright": "Copyright © 2024",
+    "directories": {
+      "output": "/Users/wangshaopeng/remote-build/dist"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.utilities",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "afterSign": "scripts/notarize.js",
+    "dmg": {
+      "title": "Remote Control Agent",
+      "window": {
+        "width": 540,
+        "height": 400
+      },
+      "iconSize": 100,
+      "contents": [
+        {
+          "name": "Remote Control Agent.app",
+          "x": 135,
+          "y": 190
+        },
+        {
+          "name": "Applications",
+          "type": "link",
+          "path": "/Applications",
+          "x": 405,
+          "y": 190
+        },
+        {
+          "name": "README.txt",
+          "type": "file",
+          "path": "build/README-dmg.txt",
+          "x": 270,
+          "y": 350
+        }
+      ]
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "input-inject.js",
+      "device-store.js",
+      "vnc-bridge.js",
+      "renderer/**/*",
+      "node_modules/**/*",
+      "!node_modules/electron/**/*",
+      "!node_modules/.cache/**/*",
+      "!node_modules/.bin/**/*",
+      "!scripts/**/*"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/@nut-tree-fork/**/*",
+      "node_modules/@nut-tree/**/*"
+    ]
+  },
+  "dependencies": {
+    "@nut-tree-fork/nut-js": "^4.2.0",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@electron/notarize": "^2.5.0",
+    "electron": "^31.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "allowScripts": {
+    "electron": true,
+    "@nut-tree-fork/node-mac-permissions": true,
+    "@sindresorhus/is": true,
+    "@szmarczak/http-timer": true,
+    "defer-to-connect": true,
+    "got": true,
+    "keyv": true,
+    "mime": true,
+    "node-fetch": true,
+    "whatwg-fetch": true
+  }
+}

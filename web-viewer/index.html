@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Remote Control</title>
+  <style>
+    :root {
+      --bg: #0a0a0c;
+      --card: #16161a;
+      --border: #26262c;
+      --text: #e8e8ea;
+      --muted: #85858c;
+      --accent: #34d399;
+      --danger: #f87171;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      overscroll-behavior: none;
+      overflow: hidden;
+    }
+
+    /* ── Pairing screen ──────────────────────────────────────────────── */
+    #pairScreen {
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      gap: 20px;
+    }
+    #pairScreen h1 { font-size: 20px; font-weight: 600; }
+    #pairScreen p { font-size: 14px; color: var(--muted); text-align: center; max-width: 280px; }
+
+    #pinInput {
+      font-size: 32px;
+      letter-spacing: 10px;
+      text-align: center;
+      width: 100%;
+      max-width: 260px;
+      padding: 16px 0 16px 10px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+    #pinInput:focus { outline: 2px solid var(--accent); }
+
+    #joinBtn {
+      width: 100%;
+      max-width: 260px;
+      height: 50px;
+      border: none;
+      border-radius: 14px;
+      background: var(--accent);
+      color: #052e21;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    #joinBtn:disabled { opacity: 0.5; }
+
+    #pairError {
+      color: var(--danger);
+      font-size: 13px;
+      min-height: 18px;
+    }
+
+    /* ── Viewer screen ───────────────────────────────────────────────── */
+    #viewerScreen {
+      display: none;
+      height: 100dvh;
+      width: 100vw;
+      /* `fixed` (not `relative`) is required so viewer.js can pin this
+         element's top/left to window.visualViewport.offsetTop/offsetLeft.
+         When the iOS keyboard opens, Safari sometimes scrolls the page
+         horizontally AND vertically to bring the focused input into view
+         — visualViewport.offsetLeft/offsetTop become non-zero even though
+         the keyboard is purely a bottom overlay. A `relative`-positioned
+         element doesn't move with that scroll, so it visually drifts off
+         to one side while the real viewport has shifted under it. Fixed
+         positioning + explicitly syncing top/left/width/height to
+         visualViewport's values (see adjustForKeyboard) keeps it glued to
+         whatever is ACTUALLY visible, regardless of how Safari scrolled.
+      */
+      position: fixed;
+      top: 0;
+      left: 0;
+      background: #000;
+      /* Position/size are overridden inline by viewer.js (see
+         adjustForKeyboard) once the on-screen keyboard opens — see the JS
+         comment there for why 100dvh alone isn't enough on iOS Safari. */
+      transition: top 0.15s ease-out, left 0.15s ease-out, width 0.15s ease-out, height 0.15s ease-out;
+    }
+    #remoteVideo {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      touch-action: none;
+      /* transform is driven by viewer.js (pinch-zoom / pan); transform-origin
+         is set to 0 0 there to match the anchor-preserving zoom math.
+         will-change hints the browser to keep this on the GPU compositing
+         layer so per-frame pinch/pan updates stay smooth. */
+      will-change: transform;
+    }
+    #topBar {
+      position: absolute;
+      top: env(safe-area-inset-top, 0);
+      left: 0; right: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent);
+      font-size: 12px;
+      color: var(--muted);
+      z-index: 10;
+    }
+    #connBadge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #connDot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+    #connDot.connected { background: var(--accent); }
+    #connDot.failed { background: var(--danger); }
+
+    #disconnectBtn {
+      background: rgba(255,255,255,0.1);
+      border: none;
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+    }
+
+    /* Hidden input used to trigger iOS's on-screen keyboard and capture text */
+    #hiddenInput {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+      top: -100px;
+    }
+
+    #keyboardToggle {
+      position: absolute;
+      bottom: calc(env(safe-area-inset-bottom, 0) + 16px);
+      right: 16px;
+      width: 50px; height: 50px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.12);
+      border: none;
+      color: var(--text);
+      font-size: 20px;
+      z-index: 10;
+    }
+
+    /* Only shown once the Mac reports 2+ screens (see viewer.js 'screen-list'
+       handler) — a single-monitor Mac never displays this, matching
+       keyboardToggle's always-visible style but conditionally hidden. */
+    #screenToggle {
+      display: none;
+      position: absolute;
+      bottom: calc(env(safe-area-inset-bottom, 0) + 16px);
+      left: 16px;
+      width: 50px; height: 50px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.12);
+      border: none;
+      color: var(--text);
+      font-size: 20px;
+      z-index: 10;
+    }
+
+    /* ── Screen-picker sheet ──────────────────────────────────────────── */
+    #screenSheetBackdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 20;
+    }
+    #screenSheet {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      background: var(--card);
+      border-radius: 20px 20px 0 0;
+      padding: 16px 16px calc(env(safe-area-inset-bottom, 0) + 16px);
+    }
+    #screenSheet h2 {
+      font-size: 14px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 10px;
+    }
+    .screen-option {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 14px 12px;
+      background: transparent;
+      border: none;
+      border-radius: 10px;
+      color: var(--text);
+      font-size: 15px;
+    }
+    .screen-option.active {
+      background: rgba(52,211,153,0.15);
+      color: var(--accent);
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Pairing screen ── -->
+  <div id="pairScreen">
+    <h1>Remote Control</h1>
+    <p>Enter the 6-digit PIN shown on your Mac</p>
+    <input id="pinInput" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="------" autocomplete="off">
+    <button id="joinBtn">Connect</button>
+    <div id="pairHint" style="font-size:13px;color:var(--muted);min-height:16px;"></div>
+    <div id="pairError"></div>
+    <p style="font-size:12px;color:var(--muted);margin-top:8px;">
+      Mac is locked? Toggle "Lock-Screen Control Mode" on the Mac Agent and open the link it shows instead of this PIN screen.
+    </p>
+  </div>
+
+  <!-- ── Viewer screen ── -->
+  <div id="viewerScreen">
+    <video id="remoteVideo" autoplay playsinline muted></video>
+    <div id="topBar">
+      <div id="connBadge"><span id="connDot"></span><span id="connText">Connecting…</span></div>
+      <button id="disconnectBtn">Disconnect</button>
+    </div>
+    <button id="keyboardToggle" aria-label="Show keyboard">⌨︎</button>
+    <button id="screenToggle" aria-label="Switch screen">🖥</button>
+    <input id="hiddenInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off">
+  </div>
+
+  <!-- ── Screen-picker sheet (multi-monitor; populated from the Mac's
+       'screen-list' DataChannel message — see viewer.js) ── -->
+  <div id="screenSheetBackdrop">
+    <div id="screenSheet">
+      <h2>Switch Screen</h2>
+      <div id="screenOptions"></div>
+    </div>
+  </div>
+
+  <script src="viewer.js"></script>
+</body>
+</html>

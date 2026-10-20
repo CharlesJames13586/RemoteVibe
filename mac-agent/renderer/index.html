@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Remote Control Agent</title>
+  <style>
+    :root {
+      --bg: #0f0f12;
+      --card: #1a1a1f;
+      --border: #2a2a30;
+      --text: #e8e8ea;
+      --muted: #8a8a90;
+      --accent: #34d399;
+      --danger: #f87171;
+      --warn: #fbbf24;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding: 20px;
+      -webkit-user-select: none;
+    }
+    h1 { font-size: 15px; font-weight: 600; margin-bottom: 16px; }
+
+    .pin-box {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      text-align: center;
+      margin-bottom: 16px;
+    }
+    .pin-label { font-size: 12px; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .pin-value { font-size: 40px; font-weight: 700; letter-spacing: 6px; font-variant-numeric: tabular-nums; }
+    .pin-expiry { font-size: 11px; color: var(--muted); margin-top: 8px; }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+    .dot.ok { background: var(--accent); }
+    .dot.bad { background: var(--danger); }
+    .dot.pending { background: var(--warn); }
+
+    .fix-btn {
+      margin-left: auto;
+      background: var(--border);
+      color: var(--text);
+      border: none;
+      border-radius: 8px;
+      padding: 5px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .fix-btn:hover { background: #35353c; }
+
+    #connState {
+      margin-top: 16px;
+      font-size: 13px;
+      color: var(--muted);
+      text-align: center;
+    }
+    #connState.connected { color: var(--accent); }
+
+    .device-section { margin-top: 16px; }
+    .device-section-title {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    #revokeAll {
+      background: transparent;
+      color: var(--danger);
+      border: 1px solid var(--danger);
+    }
+    .device-empty { font-size: 12px; color: var(--muted); padding: 8px 0; }
+    .device-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .device-info { flex: 1; min-width: 0; }
+    .device-label { font-size: 13px; }
+    .device-meta { font-size: 11px; color: var(--muted); }
+
+    #screenPicker {
+      width: 100%;
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      font-size: 13px;
+    }
+
+    .config-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-top: 8px;
+    }
+    .config-row input {
+      flex: 1;
+      min-width: 0;
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-size: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .config-row input:focus { outline: none; border-color: var(--accent); }
+    .config-row button {
+      background: var(--accent);
+      color: #0f0f12;
+      border: none;
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .config-row button:hover { filter: brightness(1.1); }
+    .config-hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    .vnc-toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .vnc-switch {
+      position: relative;
+      width: 40px;
+      height: 22px;
+      flex-shrink: 0;
+      background: var(--border);
+      border-radius: 11px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .vnc-switch.on { background: var(--accent); }
+    .vnc-switch::after {
+      content: '';
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      transition: transform 0.15s;
+    }
+    .vnc-switch.on::after { transform: translateX(18px); }
+    #vncStatus { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+    #vncLinkBox {
+      display: none;
+      margin-top: 8px;
+      padding: 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    #vncLinkText {
+      font-size: 11px;
+      word-break: break-all;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--accent);
+      line-height: 1.4;
+      user-select: text;
+      -webkit-user-select: text;
+      margin-bottom: 6px;
+    }
+    #vncCopyBtn {
+      background: var(--accent);
+      color: #0f0f12;
+      border: none;
+      border-radius: 8px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+    }
+    #vncCopyBtn:hover { filter: brightness(1.1); }
+  </style>
+</head>
+<body>
+  <h1>Remote Control Agent</h1>
+
+  <div class="pin-box">
+    <div class="pin-label">Enter this PIN on your iPhone</div>
+    <div class="pin-value" id="pinValue">------</div>
+    <div class="pin-expiry" id="pinExpiry"></div>
+  </div>
+
+  <div class="device-section" id="screenPickerSection" style="display:none;">
+    <div class="device-section-title"><span>Screen to Share</span></div>
+    <select id="screenPicker"></select>
+  </div>
+
+  <div class="status-row">
+    <span class="dot" id="dotScreen"></span>
+    <span>Screen Recording</span>
+    <button class="fix-btn" id="fixScreen">Enable</button>
+  </div>
+  <div class="status-row">
+    <span class="dot" id="dotAccess"></span>
+    <span>Accessibility (mouse/keyboard)</span>
+    <button class="fix-btn" id="fixAccess">Enable</button>
+  </div>
+  <div class="status-row">
+    <span class="dot" id="dotSignal"></span>
+    <span>Signaling Server</span>
+  </div>
+
+  <div class="device-section" style="margin-top:8px;">
+    <div class="device-section-title"><span>Signal URL</span></div>
+    <div class="config-row">
+      <input id="signalUrlInput" type="text" placeholder="wss://your-domain" spellcheck="false" autocomplete="off">
+      <button id="signalUrlSave">Save</button>
+    </div>
+    <div class="config-hint" id="signalUrlHint">Saved. Click Save to reconnect.</div>
+  </div>
+
+  <div id="connState">Waiting for pairing…</div>
+
+  <div class="device-section">
+    <div class="device-section-title vnc-toggle-row">
+      <span>Lock-Screen Control Mode</span>
+      <div class="vnc-switch" id="vncSwitch"></div>
+    </div>
+    <div id="vncStatus">Off — uses macOS's own Screen Sharing, works even when the Mac is locked. Requires Screen Sharing enabled in System Settings &gt; General &gt; Sharing.</div>
+    <div id="vncLinkBox">
+      <div id="vncLinkText"></div>
+      <button id="vncCopyBtn">Copy Link</button>
+    </div>
+  </div>
+
+  <div class="device-section">
+    <div class="device-section-title">
+      <span>Trusted Devices</span>
+      <button class="fix-btn" id="revokeAll" style="display:none;">Revoke All</button>
+    </div>
+    <div id="deviceList"></div>
+  </div>
+
+  <video id="localPreview" autoplay muted playsinline style="display:none;"></video>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
