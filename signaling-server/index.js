@@ -212,8 +212,11 @@ const server = http.createServer((req, res) => {
   // Serve the web-viewer static files from the same origin/port so the
   // iPhone browser and the WebSocket signaling connection share one host —
   // avoids CORS/mixed-content issues under wss:// in production.
-  const urlPath = req.url === '/' ? '/index.html' : req.url.split('?')[0];
-  const filePath = path.join(WEB_VIEWER_DIR, urlPath);
+  // Strip the query string first: the viewer is reached as
+  // `/?signal=ws://...`, so `req.url` is not exactly '/' and must still
+  // resolve to index.html instead of the directory itself (EISDIR → 404).
+  const urlPath = (req.url || '/').split('?')[0] || '/';
+  const filePath = path.join(WEB_VIEWER_DIR, urlPath === '/' ? '/index.html' : urlPath);
 
   if (!filePath.startsWith(WEB_VIEWER_DIR)) {
     res.writeHead(403);
