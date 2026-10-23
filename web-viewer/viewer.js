@@ -520,8 +520,10 @@
   //                   messages at all — per the explicit design decision
   //                   that there is no "drag the remote mouse while zoomed"
   //                   gesture on phones.
-  //   'pinch'       — two fingers down: live pinch-to-zoom, anchored so the
-  //                   content under the fingers' midpoint stays fixed.
+  //   'pinch'       — two fingers down: resolved on first movement into
+  //                   either live pinch-to-zoom (anchored so the content
+  //                   under the fingers' midpoint stays fixed) or a wheel
+  //                   scroll of the remote Mac window.
   let activeTouchMode = null;
   let gestureTouchStartTime = 0;
   let gestureStartClientX = 0;
@@ -530,6 +532,26 @@
   let panStartTranslateX = 0;
   let panStartTranslateY = 0;
   let pinchLastDistance = 0;
+
+  // Two-finger drag → wheel scroll on the Mac. The Agent has always known
+  // how to inject 'scroll' (input-inject.js), but nothing ever sent it, so
+  // scrollable Mac windows could not be scrolled from the phone at all.
+  // Two fingers are shared with pinch-to-zoom, hence the one-shot intent
+  // latch below: whichever interpretation the first ~10px of movement
+  // supports wins for the rest of the gesture.
+  const TWO_FINGER_DISTANCE_THRESHOLD_PX = 12; // finger spread change ⇒ pinch
+  const TWO_FINGER_MID_THRESHOLD_PX = 10; // midpoint travel ⇒ scroll
+  // nut.js takes wheel "steps" (roughly one line ≈ 40px of content), not
+  // pixels, so finger travel is scaled down hard. Tune between 0.03 and 0.1
+  // if scrolling feels too slow or too fast on a real phone.
+  const SCROLL_GAIN = 0.05;
+  let twoFingerIntent = null; // null | 'pinch' | 'scroll'
+  let twoFingerStartDistance = 0;
+  let twoFingerStartMid = { x: 0, y: 0 };
+  let twoFingerLastMid = { x: 0, y: 0 };
+  let scrollAxis = 'y'; // locked on the first decisive move
+  let scrollAccumX = 0;
+  let scrollAccumY = 0;
   const TAP_MOVE_THRESHOLD_PX = 10;
 
   // Three-finger swipe → macOS desktop/Space switching (plan.md follow-up:
@@ -580,6 +602,13 @@
     if (e.touches.length === 2) {
       activeTouchMode = 'pinch';
       pinchLastDistance = touchDistance(e.touches[0], e.touches[1]);
+      twoFingerIntent = null;
+      twoFingerStartDistance = pinchLastDistance;
+      twoFingerStartMid = touchMidpoint(e.touches[0], e.touches[1]);
+      twoFingerLastMid = twoFingerStartMid;
+      scrollAxis = 'y';
+      scrollAccumX = 0;
+      scrollAccumY = 0;
       return;
     }
     if (e.touches.length === 1) {
@@ -609,6 +638,55 @@
       const mid = touchMidpoint(t0, t1);
       const factor = newDistance / pinchLastDistance;
       pinchLastDistance = newDistance;
+
+      // A two-finger gesture is ambiguous until the fingers actually move:
+      // spreading them apart means zoom, sliding them together means
+      // scroll. Latch once — switching interpretation mid-gesture feels
+      // broken — and only latch after enough movement to be deliberate, so
+      // a slow pinch isn't misread as a scroll.
+      if (twoFingerIntent === null) {
+        const distanceDelta = Math.abs(newDistance - twoFingerStartDistance);
+        const midTravel = Math.hypot(
+          mid.x - twoFingerStartMid.x,
+          mid.y - twoFingerStartMid.y
+        );
+        if (distanceDelta > TWO_FINGER_DISTANCE_THRESHOLD_PX) {
+          twoFingerIntent = 'pinch';
+        } else if (midTravel > TWO_FINGER_MID_THRESHOLD_PX) {
+          twoFingerIntent = 'scroll';
+          scrollAxis =
+            Math.abs(mid.x - twoFingerStartMid.x) > Math.abs(mid.y - twoFingerStartMid.y)
+              ? 'x'
+              : 'y';
+        }
+        if (twoFingerIntent === null) {
+          // Still inside the dead zone: send nothing yet, but keep the last
+          // midpoint fresh so the first scroll step isn't a jump.
+          twoFingerLastMid = mid;
+          return;
+        }
+      }
+
+      if (twoFingerIntent === 'scroll') {
+        // Locked to the axis of the first decisive move so a slightly
+        // diagonal swipe doesn't jitter both directions. The sign is
+        // inverted: dragging fingers up scrolls the content up, which is a
+        // positive (downward) wheel delta on the Mac.
+        if (scrollAxis === 'y') scrollAccumY -= mid.y - twoFingerLastMid.y;
+        else scrollAccumX -= mid.x - twoFingerLastMid.x;
+        twoFingerLastMid = mid;
+
+        // Only whole wheel steps are worth sending — the Agent rounds them
+        // anyway, and sub-step traffic would just spam the DataChannel.
+        const stepX = Math.round(scrollAccumX * SCROLL_GAIN);
+        const stepY = Math.round(scrollAccumY * SCROLL_GAIN);
+        if (stepX !== 0 || stepY !== 0) {
+          sendControl({ type: 'scroll', deltaX: stepX, deltaY: stepY });
+          scrollAccumX -= stepX / SCROLL_GAIN;
+          scrollAccumY -= stepY / SCROLL_GAIN;
+        }
+        return;
+      }
 
       const rect = viewerScreen.getBoundingClientRect();
       // Anchor-preserving zoom: find where the pinch midpoint currently
@@ -666,8 +744,17 @@
 
     // One finger lifted out of a two-finger pinch: re-baseline the
     // remaining finger into single-touch mode so there's no jump/snap.
+    // After a scroll, though, re-baselining would fling the remote cursor
+    // to the leftover finger and could fire a click on release — so the
+    // remainder of that gesture is swallowed instead.
     if (e.touches.length === 1 && activeTouchMode === 'pinch') {
-      beginSingleTouchMode(e.touches[0]);
+      if (twoFingerIntent === 'scroll') activeTouchMode = 'scroll-done';
+      else beginSingleTouchMode(e.touches[0]);
+      return;
+    }
+
+    if (activeTouchMode === 'scroll-done') {
+      if (e.touches.length === 0) activeTouchMode = null;
       return;
     }
 
@@ -713,6 +800,7 @@
     // held across touch gestures in this design, so there's nothing to
     // "release" on the Agent side.
     activeTouchMode = null;
+    twoFingerIntent = null;
   });
 
   // ── Mouse event mapping (desktop browser testing / trackpad use) ────────

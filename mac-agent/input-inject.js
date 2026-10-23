@@ -143,8 +143,14 @@ async function injectEvent(data, displayBounds = null) {
       break;
     }
     case 'scroll': {
-      if (data.deltaY) await mouse.scrollDown(Math.round(data.deltaY));
-      if (data.deltaX) await mouse.scrollRight(Math.round(data.deltaX));
+      // Deltas are signed wheel-style amounts: positive Y scrolls the
+      // content down, positive X scrolls it right. nut.js exposes separate
+      // up/down and left/right calls, so dispatch on the sign instead of
+      // relying on negative amounts being interpreted as the reverse.
+      const dy = Math.round(data.deltaY || 0);
+      if (dy) await (dy > 0 ? mouse.scrollDown(dy) : mouse.scrollUp(-dy));
+      const dx = Math.round(data.deltaX || 0);
+      if (dx) await (dx > 0 ? mouse.scrollRight(dx) : mouse.scrollLeft(-dx));
       break;
     }
     case 'keydown': {
