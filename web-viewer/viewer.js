@@ -544,7 +544,7 @@
   // nut.js takes wheel "steps" (roughly one line ≈ 40px of content), not
   // pixels, so finger travel is scaled down hard. Tune between 0.03 and 0.1
   // if scrolling feels too slow or too fast on a real phone.
-  const SCROLL_GAIN = 0.05;
+  const SCROLL_GAIN = 0.5;
   let twoFingerIntent = null; // null | 'pinch' | 'scroll'
   let twoFingerStartDistance = 0;
   let twoFingerStartMid = { x: 0, y: 0 };
